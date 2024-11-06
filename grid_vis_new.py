@@ -44,7 +44,9 @@ class VoxelGrid(ShowBase):
 
     def update_empty(self, task):
         if self.ticked:
-            new_grid = np.array(self.update_func(self.grid2d))
+            new = self.update_func(self.grid2d)
+            if new is None: self.userExit()
+            new_grid = np.array(new)
             self.update_grid(new_grid)
             self.update_floor()
             self.spin_camera(task)
@@ -121,13 +123,10 @@ class VoxelGrid(ShowBase):
         voxel = self.loader.loadModel("models/box")
         voxel.setTag("type", "GridCube")
 
-        size = int(value[-2:], 16)/255
+        size = int(value[-2:], 16)/255 if len(value) == 8 else 1
         voxel.setPos(Point3(x - 1/2, y - 1/2, z))
         voxel.setScale(size)
 
-        # colours = [(0.8, 0.84, 0.68), (0.91, 0.93, 0.79), (1.0, 0.98, 0.88), (0.98, 0.93, 0.8)]
-        # colour = random.choice(colours)
-        # print(x, y, value)
         colour = self.hex_to_rgb_tuple(value)
         voxel.setColor(*colour, 1)
 
@@ -151,11 +150,10 @@ class VoxelGrid(ShowBase):
 
 
 def blank(grid):
-    pass
+    return grid
 
 def run_grid(npgrid, update_func=blank, tick_rate=0.1):
     npgrid = np.array(npgrid)
-    print(npgrid)
     app = VoxelGrid(npgrid, tick_rate)
     app.update_func = update_func
     app.run()

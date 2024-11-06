@@ -8,12 +8,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from grid_vis import run_grid
+from grid_vis_new import run_grid
     
 class Grid():
     def __init__(self, size, treat_ratio = 0.7, trap_ratio = 0.3):
-        # super().__init__()
-        self.board = torch.zeros(size)
         self.size = size
         self.height = size[0]
         self.width = size[1]
@@ -22,6 +20,8 @@ class Grid():
         self.treat_ratio = treat_ratio
         self.trap_ratio = trap_ratio
         self.num_traps = 0
+
+        self.colour_dict = {"treat": "ba0d8e66", "trap": "110c0baa", "agent": "db2046"}
 
         self.memory = deque(maxlen=10000)
 
@@ -33,14 +33,17 @@ class Grid():
         self.memory.append([state, action, reward, next_state, done])
 
     def init_board(self):
-        self.board = torch.zeros(self.size)
+        self.board = np.zeros(self.size, dtype='U8')
+        for y, row in enumerate(self.board):
+            for x in range(len(row)):
+                self.board[y][x] = "000000FF"
         treats = 0
         num_treats = self.height * self.width * self.treat_ratio
         while treats < num_treats:
             x = rn.randint(0, self.width - 1)
             y = rn.randint(0, self.height - 1)
             if self.board[y][x] != 1:
-                self.board[y][x] = 1
+                self.board[y][x] = self.colour_dict["treat"]
                 treats += 1
         traps = 0
         self.num_traps = (self.height * self.width - num_treats) * self.trap_ratio
@@ -48,14 +51,14 @@ class Grid():
             x = rn.randint(0, self.width - 1)
             y = rn.randint(0, self.height - 1)
             if self.board[y][x] != 1:
-                self.board[y][x] = 9
+                self.board[y][x] = self.colour_dict["trap"]
                 traps += 1
 
         self.agent_pos = torch.tensor((self.height//2, self.width//2))
-        self.board[self.agent_pos[0]][self.agent_pos[1]] = 4
+        self.board[self.agent_pos[0]][self.agent_pos[1]] = self.colour_dict["agent"]
 
     def is_inbounds(self, pos):
-        if -1 in pos or self.width in pos or self.height in pos:
+        if -1 in pos or self.width <= pos[0] or self.height <= pos[1]:
             return False
         return True
     
@@ -69,22 +72,22 @@ class Grid():
     
     def calc_reward(self, action):
         next_val = self.board[action[0]][action[1]]
-        if next_val == 1:
+        if next_val == self.colour_dict["treat"]:
             return 1
-        elif next_val == 9:
+        elif next_val == self.colour_dict["trap"]:
             return -3
         return 0
 
     def is_done(self):
-        if int(torch.count_nonzero(self.board)) == self.num_traps + 1: return True
-        if self.initial_setup[self.agent_pos[0]][self.agent_pos[1]] == 9: return True
+        # if int(torch.count_nonzero(self.board)) == self.num_traps + 1: return True
+        if self.initial_setup[self.agent_pos[0]][self.agent_pos[1]] == self.colour_dict["trap"]: return True
         return False
     
     def next_state(self, next_pos):
         next = deepcopy(self.board)
-        next[self.agent_pos[0]][self.agent_pos[1]] = 0
+        next[self.agent_pos[0]][self.agent_pos[1]] = "000000"
         self.agent_pos = next_pos
-        next[next_pos[0]][next_pos[1]] = 4
+        next[next_pos[0]][next_pos[1]] = self.colour_dict["agent"]
 
         return next
 
@@ -172,12 +175,12 @@ class DLGrid(Grid):
         else:
             # Take random action
             return rn.choice(self.get_next())
-        
 
     def replay(self):
         rn.sample(self.memory, self.BATCH_SIZE)
 
     def step(self, current_grid):
+        if self.finished: return None
         action = self.pick_action()
         reward = self.calc_reward(action)
         self.score += reward
@@ -186,7 +189,7 @@ class DLGrid(Grid):
         self.remember(self.board, action, reward, next_state, self.finished)
         self.board = next_state
         self.finished = self.is_done()
-        print(next_state)
+
         return next_state
 
     def run_episode(self):
@@ -210,6 +213,6 @@ class DLGrid(Grid):
         self.initial_setup = deepcopy(self.board)
 
 
-newboard = DLGrid((12, 8))
-run_grid(newboard.board, update_func=newboard.step, tick_rate=1)
-# newboard.run_n_episodes(7)
+if __name__ == "__main__":
+    grid =  DLGrid((4, 6))
+    run_grid(grid.board, update_func=grid.step, tick_rate=1)
