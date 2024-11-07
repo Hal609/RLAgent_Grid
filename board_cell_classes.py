@@ -1,7 +1,6 @@
 import numpy as np
 import random as rn
 import pandas as pd
-from time import sleep
 from copy import deepcopy
 from collections import deque, namedtuple
 import math
@@ -118,7 +117,6 @@ class DLGrid():
                 self.board[y][x] = self.colour_dict["trap"]
                 traps += 1
 
-
         self.agent_pos = torch.tensor((self.height//2, self.width//2))
         self.board[self.agent_pos[0]][self.agent_pos[1]] = self.colour_dict["agent"]
 
@@ -174,36 +172,25 @@ class DLGrid():
        self.memory.sample(self.BATCH_SIZE)
 
     def step(self, current_grid):
-        if self.finished: sleep(0.5); self.reset()
+        if self.finished: self.reset()
 
         action = self.pick_action()
         reward = self.calc_reward(action)
         self.score += reward
         next_state = self.next_state(action)
-        self.board_to_tensor(next_state)
-        # state, action, reward, next state, is terminal?
         self.memory.push(self.board_to_tensor(self.board), action, self.board_to_tensor(next_state), reward)
         self.board = next_state
         self.finished = self.is_done()
 
         return next_state
 
-    def run_n_episodes(self, n):
+    def run_n_episodes(self, n, tick_rate = 0):
         for i in range(n):
-            run_grid(self.board, update_func=grid.step, tick_rate=0.1)
+            run_grid(self.board, update_func=self.step, tick_rate=tick_rate)
             self.reset()
 
     def reset(self):
-        print(self.score)
-        # print(self.memory)
         self.score = 0
-        self.board = self.initial_setup
         self.finished = False
         self.init_board()
         self.initial_setup = deepcopy(self.board)
-
-
-if __name__ == "__main__":
-    grid =  DLGrid((18, 18))
-    grid.run_n_episodes(n=10)
-    # run_grid(grid.board, update_func=grid.step, tick_rate=0.1)

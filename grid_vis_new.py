@@ -1,9 +1,6 @@
-from panda3d.core import Point3
+from panda3d.core import Point3, LVector3, LVector4, DirectionalLight, CullFaceAttrib, AntialiasAttrib
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
-from panda3d.core import LVector3, LVector4
-from panda3d.core import DirectionalLight
-from panda3d.core import CullFaceAttrib, AntialiasAttrib
 import numpy as np
 import random
 from time import sleep
@@ -17,8 +14,8 @@ class VoxelGrid(ShowBase):
 
         self.done = False
         self.tick_rate = tick_rate
-        self.tick = self.tick_rate
-        self.ticked = False
+        # self.tick = self.tick_rate
+        # self.ticked = False
         self.grid2d = numpy_grid
 
         self.cam_pos = Point3(0, 0, 0)
@@ -37,21 +34,19 @@ class VoxelGrid(ShowBase):
 
         # Update the scene at a consistent frame rate
         self.taskMgr.add(self.spin_camera, "spin_camera_task")
-        self.taskMgr.add(self.update_empty, "update_grid_task")
-        self.taskMgr.add(self.tick_frame, "tick_frame_task")
+        self.taskMgr.doMethodLater(self.tick_rate, self.update_grid_task, "update_grid_task")
+        # self.taskMgr.doMethodLater(self.tick_rate, self.tick_frame, "tick_frame_task")
 
         self.render.setDepthTest(True)
         self.render.setDepthWrite(True)
 
-    def update_empty(self, task):
-        if self.ticked:
-            new = self.update_func(self.grid2d)
-            if new is None: self.userExit()
-            new_grid = np.array(new)
-            self.update_grid(new_grid)
-            self.update_floor()
-            self.spin_camera(task)
-        return Task.cont
+    def update_grid_task(self, task):
+        new = self.update_func(self.grid2d)
+        if new is None: self.userExit()
+        new_grid = np.array(new)
+        self.update_grid(new_grid)
+        self.update_floor()
+        return Task.again
     
     def update_grid(self, new_grid):
         # if (new_grid == self.grid2d).all(): return
@@ -65,16 +60,6 @@ class VoxelGrid(ShowBase):
         floor.setSx(self.grid2d.shape[0] + 2)
         floor.setSy((self.grid2d.shape[1] + 2))
         floor.setPos(Point3(self.grid2d.shape[0]/2 - 1, self.grid2d.shape[1]/2 - 1, -1))
-
-    def tick_frame(self, task):
-        order = math.floor(math.log(self.tick_rate, 10))
-        if self.tick == round(task.time, -order):
-            self.tick = round(task.time + self.tick_rate, -order)
-            self.ticked = True
-        else:
-            self.ticked = False
-            self.tick = round(task.time + 0.1, 1)
-        return Task.cont
 
     def setup_lighting(self):
         self.light = self.render.attachNewNode(DirectionalLight("DirectionalLights"))
