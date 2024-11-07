@@ -70,14 +70,12 @@ class DLGrid():
         self.colour_dict = {"treat": "ba0d8e66", "trap": "110c0baa", "agent": "db2046"}
         self.board_val_dict = {"000000ff": 0, "ffffffff": 1, "ba0d8e66": 2, "110c0baa": 3, "db2046": 4}
 
-        self.memory = deque(maxlen=10000)
-
         self.init_board()
-        self.state = self.board_to_tensor(self.board).flatten()
+        self.state = self.board_to_tensor(self.board)
         self.initial_setup = deepcopy(self.board)
 
         self.BATCH_SIZE = 128  # BATCH_SIZE is the number of transitions sampled from the replay buffer
-        self.GAMMA = 0.99  # GAMMA is the discount factor as mentioned in the previous section
+        self.GAMMA = 0.99  # GAMMA is the discount factor
         self.EPS_START = 0.9  # EPS_START is the starting value of epsilon
         self.EPS_END = 0.05  # EPS_END is the final value of epsilon
         self.EPS_DECAY = 1000  # EPS_DECAY controls the rate of exponential decay of epsilon, higher means a slower decay
@@ -97,7 +95,7 @@ class DLGrid():
 
         self.steps_done = 0
 
-    def init_board(self):
+    def init_board_random(self):
         self.board = np.zeros(self.size, dtype='U8')
         for y, row in enumerate(self.board):
             for x in range(len(row)):
@@ -124,7 +122,65 @@ class DLGrid():
 
         self.agent_pos = torch.tensor((self.height//2, self.width//2))
         self.board[self.agent_pos[0]][self.agent_pos[1]] = self.colour_dict["agent"]
+        print(self.board)
 
+    def init_board(self):
+       self.agent_pos = torch.tensor((self.height//2, self.width//2))
+       self.board = np.array([['ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff',
+  'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff',
+  'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff'],
+ ['ffffffff', '110c0baa', '110c0baa', '000000ff', 'ba0d8e66', 'ba0d8e66',
+  'ba0d8e66', '000000ff', 'ba0d8e66', 'ba0d8e66', '000000ff', 'ba0d8e66',
+  '000000ff', '000000ff', 'ba0d8e66', '110c0baa', '110c0baa', 'ffffffff'],
+ ['ffffffff', 'ba0d8e66', '000000ff', '000000ff', '000000ff', 'ba0d8e66',
+  '000000ff', 'ba0d8e66', '110c0baa', '110c0baa', '000000ff', 'ba0d8e66',
+  '110c0baa', 'ba0d8e66', 'ba0d8e66', '110c0baa', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '000000ff',
+  'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '110c0baa', 'ba0d8e66', '000000ff',
+  '000000ff', '110c0baa', '000000ff', 'ba0d8e66', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', '000000ff', '000000ff', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66',
+  'ba0d8e66', '000000ff', '000000ff', 'ba0d8e66', '110c0baa', '110c0baa',
+  'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', 'ba0d8e66', 'ba0d8e66', '000000ff', '000000ff', '000000ff',
+  'ba0d8e66', '000000ff', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ba0d8e66',
+  '000000ff', 'ba0d8e66', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', '000000ff', 'ba0d8e66', '000000ff', 'ba0d8e66', '000000ff',
+  '110c0baa', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ba0d8e66', '000000ff',
+  'ba0d8e66', '110c0baa', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', '110c0baa', 'ba0d8e66', '000000ff', '000000ff', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', '000000ff', 'ba0d8e66', '000000ff', 'ba0d8e66',
+  '000000ff', '000000ff', 'ba0d8e66', 'ba0d8e66', '000000ff', 'ffffffff'],
+ ['ffffffff', '000000ff', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', '110c0baa', '000000ff', '000000ff', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', '000000ff', '000000ff', '110c0baa', 'ffffffff'],
+ ['ffffffff', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ba0d8e66', '000000ff',
+  'ba0d8e66', '000000ff', 'ba0d8e66', 'db2046'  , 'ba0d8e66', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', 'ba0d8e66', 'ba0d8e66', '110c0baa', 'ba0d8e66', '000000ff',
+  'ba0d8e66', '000000ff', '000000ff', '000000ff', 'ba0d8e66', 'ba0d8e66',
+  '000000ff', '110c0baa', 'ba0d8e66', 'ba0d8e66', '000000ff', 'ffffffff'],
+ ['ffffffff', '000000ff', 'ba0d8e66', 'ba0d8e66', '110c0baa', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '000000ff', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', 'ba0d8e66', 'ba0d8e66', '000000ff', '000000ff', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '110c0baa', '000000ff',
+  '000000ff', '000000ff', '110c0baa', 'ba0d8e66', '000000ff', 'ffffffff'],
+ ['ffffffff', '000000ff', '000000ff', '110c0baa', 'ba0d8e66', 'ba0d8e66',
+  'ba0d8e66', '000000ff', '000000ff', '000000ff', 'ba0d8e66', 'ba0d8e66',
+  'ba0d8e66', '000000ff', 'ba0d8e66', '000000ff', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '000000ff', '000000ff',
+  '000000ff', '000000ff', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '000000ff',
+  'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '110c0baa', 'ba0d8e66', 'ffffffff'],
+ ['ffffffff', '000000ff', 'ba0d8e66', 'ba0d8e66', '000000ff', '110c0baa',
+  '110c0baa', '000000ff', 'ba0d8e66', '000000ff', '000000ff', '000000ff',
+  '000000ff', '000000ff', 'ba0d8e66', '000000ff', '000000ff', 'ffffffff'],
+ ['ffffffff', '000000ff', '110c0baa', 'ba0d8e66', '110c0baa', 'ba0d8e66',
+  'ba0d8e66', 'ba0d8e66', 'ba0d8e66', 'ba0d8e66', '110c0baa', 'ba0d8e66',
+  '000000ff', '000000ff', 'ba0d8e66', '000000ff', '000000ff', 'ffffffff'],
+ ['ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff',
+  'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff',
+  'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff', 'ffffffff']])
+    
     def is_inbounds(self, pos):
         if 0 in pos or self.width-1 <= pos[1] or self.height-1 <= pos[0]:
             return False
@@ -134,10 +190,10 @@ class DLGrid():
         new_pos = self.agent_pos + self.action_map[int(choice)]
         next_val = self.board[new_pos[0]][new_pos[1]]
         if next_val == self.colour_dict["treat"]:
-            return 1
+            return torch.tensor([5.0], device=self.device)
         elif next_val == self.colour_dict["trap"]:
-            return -3
-        return 0
+            return torch.tensor([-10.0], device=self.device)
+        return torch.tensor([-1.0], device=self.device)
     
     def next_state(self, choice):
         next_pos = self.agent_pos + self.action_map[int(choice)]
@@ -154,7 +210,7 @@ class DLGrid():
         for y, row in enumerate(self.board):
             for x, cell in enumerate(row):
                 tensor_board[y][x] = self.board_val_dict[cell.lower()]
-        return tensor_board
+        return tensor_board.flatten().unsqueeze(0)
         
     def is_done(self):
         if int(torch.count_nonzero(self.board_to_tensor(self.board))) == self.num_traps + 1: return True
@@ -165,17 +221,63 @@ class DLGrid():
         sample = rn.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * \
             math.exp(-1. * self.steps_done / self.EPS_DECAY)
+        # print("eps", eps_threshold)
         self.steps_done += 1
         if sample > eps_threshold:
             # Take deliberate action
             with torch.no_grad():
-                return torch.argmax(self.policy_net(self.state))
+                return torch.argmax(self.policy_net(self.state)).unsqueeze(0).unsqueeze(0)
         else:
             # Take random action
-            return torch.tensor(rn.randint(0, 3), device=self.device)
+            return torch.tensor([[rn.randint(0, 3)]], device=self.device)
 
-    def replay(self):
-       self.memory.sample(self.BATCH_SIZE)
+    def optimize_model(self):
+        if len(self.memory) < self.BATCH_SIZE:
+            return
+        transitions = self.memory.sample(self.BATCH_SIZE)
+        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
+        # detailed explanation). This converts batch-array of Transitions
+        # to Transition of batch-arrays.
+        batch = Transition(*zip(*transitions))
+
+        # Compute a mask of non-final states and concatenate the batch elements
+        # (a final state would've been the one after which simulation ended)
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                            batch.next_state)), device=self.device, dtype=torch.bool)
+        non_final_next_states = torch.cat([s for s in batch.next_state
+                                                    if s is not None])
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
+
+        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+        # columns of actions taken. These are the actions which would've been taken
+        # for each batch state according to policy_net
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+
+        # Compute V(s_{t+1}) for all next states.
+        # Expected values of actions for non_final_next_states are computed based
+        # on the "older" target_net; selecting their best reward with max(1).values
+        # This is merged based on the mask, such that we'll have either the expected
+        # state value or 0 in case the state was final.
+        next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
+        with torch.no_grad():
+            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
+        # Compute the expected Q values
+        expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
+
+
+        # Compute Huber loss
+        criterion = nn.SmoothL1Loss()
+        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+        # print("loss", float(loss))
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        # In-place gradient clipping
+        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
+        self.optimizer.step()
 
     def step(self, current_grid):
         if self.finished: self.reset()
@@ -183,21 +285,47 @@ class DLGrid():
         action = self.pick_action()
         reward = self.calc_reward(action)
         self.score += reward
-        next_state = self.next_state(action)
+        next_board = self.next_state(action)
+        self.finished = self.is_done()
+
+        if self.finished:
+            next_state = None
+        else:
+            next_state = self.board_to_tensor(next_board)
+
         self.memory.push(self.board_to_tensor(self.board), action, self.board_to_tensor(next_state), reward)
         self.board = next_state
-        self.state = self.board_to_tensor(self.board).flatten()
-        self.finished = self.is_done()
+        self.state = self.board_to_tensor(self.board)
+
+        # Perform one step of the optimization (on the policy network)
+        self.optimize_model()
+
+        # Soft update of the target network's weights
+        # θ′ ← τ θ + (1 −τ )θ′
+        target_net_state_dict = self.target_net.state_dict()
+        policy_net_state_dict = self.policy_net.state_dict()
+        for key in policy_net_state_dict:
+            target_net_state_dict[key] = policy_net_state_dict[key]*self.TAU + target_net_state_dict[key]*(1-self.TAU)
+        self.target_net.load_state_dict(target_net_state_dict)
 
         return next_state
 
-    def run_n_episodes(self, n, tick_rate = 0):
+    def run_n_episodes(self, n, tick_rate = 0, vis=False):
         for i in range(n):
-            run_grid(self.board, update_func=self.step, tick_rate=tick_rate)
-            self.reset()
+            if vis:
+                run_grid(self.board, update_func=self.step, tick_rate=tick_rate)
+            else:
+                while not self.finished:
+                    self.step(None)
 
     def reset(self):
+        # print(int(self.score))
         self.score = 0
         self.finished = False
         self.init_board()
+        self.state = self.board_to_tensor(self.board)
         self.initial_setup = deepcopy(self.board)
+
+if __name__ == "__main__":
+    grid =  DLGrid((18, 18))
+    grid.run_n_episodes(n=500, vis=False)
