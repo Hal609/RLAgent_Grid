@@ -1,5 +1,6 @@
 import numpy as np
 import random as rn
+import pandas as pd
 from time import sleep
 from copy import deepcopy
 from collections import deque, namedtuple
@@ -149,7 +150,11 @@ class ReplayMemory(object):
         return len(self.memory)
     
     def __str__(self):
-        return str(self.memory)
+        # Create the DataFrame once with the collected rows
+        frame = pd.DataFrame(self.memory, columns=['state', 'action', 'next_state', 'reward'])
+
+        # Return the DataFrame as a string representation
+        return str(frame)
 
 
 class DLGrid(Grid):
@@ -189,11 +194,9 @@ class DLGrid(Grid):
         if sample > eps_threshold:
             # Take deliberate action
             return rn.randint(0, 3)
-            return rn.choice(self.get_next())
         else:
             # Take random action
             return rn.randint(0, 3)
-            return rn.choice(self.get_next())
 
     def replay(self):
        self.memory.sample(self.BATCH_SIZE)
@@ -207,8 +210,7 @@ class DLGrid(Grid):
         next_state = self.next_state(action)
         self.board_to_tensor(next_state)
         # state, action, reward, next state, is terminal?
-        print("board", action, reward, "next_state")
-        self.memory.push(self.board, action, reward, next_state)
+        self.memory.push(self.board_to_tensor(self.board), action, self.board_to_tensor(next_state), reward)
         self.board = next_state
         self.finished = self.is_done()
 
@@ -221,7 +223,7 @@ class DLGrid(Grid):
 
     def reset(self):
         print(self.score)
-        # print(self.memory)
+        print(self.memory)
         self.score = 0
         self.board = self.initial_setup
         self.finished = False
