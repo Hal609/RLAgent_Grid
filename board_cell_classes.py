@@ -49,6 +49,10 @@ class ReplayMemory(object):
 
 class DLGrid():
     def __init__(self, size, treat_ratio=0.7, trap_ratio=0.3):
+        self.device = torch.device(
+                    "cuda" if torch.cuda.is_available() else
+                    "mps" if torch.backends.mps.is_available() else
+                    "cpu")
         self.size = size
         self.height = size[0]
         self.width = size[1]
@@ -57,14 +61,19 @@ class DLGrid():
         self.treat_ratio = treat_ratio
         self.trap_ratio = trap_ratio
         self.num_traps = 0
-        self.action_map = {0: torch.tensor((0, 1)), 1: torch.tensor((0, -1)), 2: torch.tensor((1, 0)), 3: torch.tensor((-1, 0))}
-
+        self.action_map = {
+            0 : torch.tensor((0, 1)), 
+            1 : torch.tensor((0, -1)), 
+            2 : torch.tensor((1, 0)), 
+            3 : torch.tensor((-1, 0))}
+        
         self.colour_dict = {"treat": "ba0d8e66", "trap": "110c0baa", "agent": "db2046"}
         self.board_val_dict = {"000000ff": 0, "ffffffff": 1, "ba0d8e66": 2, "110c0baa": 3, "db2046": 4}
 
         self.memory = deque(maxlen=10000)
 
         self.init_board()
+        self.state = self.board_to_tensor(self.board).flatten()
         self.initial_setup = deepcopy(self.board)
 
         self.BATCH_SIZE = 128  # BATCH_SIZE is the number of transitions sampled from the replay buffer
@@ -75,10 +84,6 @@ class DLGrid():
         self.TAU = 0.005  # TAU is the update rate of the target network
         self.LR = 1e-4  # LR is the learning rate of the ``AdamW`` optimizer
 
-        self.device = torch.device(
-                    "cuda" if torch.cuda.is_available() else
-                    "mps" if torch.backends.mps.is_available() else
-                    "cpu")
 
         n_actions = 4
         n_observations = self.height * self.width
@@ -126,7 +131,7 @@ class DLGrid():
         return True
     
     def calc_reward(self, choice):
-        new_pos = self.agent_pos + self.action_map[choice]
+        new_pos = self.agent_pos + self.action_map[int(choice)]
         next_val = self.board[new_pos[0]][new_pos[1]]
         if next_val == self.colour_dict["treat"]:
             return 1
@@ -135,7 +140,7 @@ class DLGrid():
         return 0
     
     def next_state(self, choice):
-        next_pos = self.agent_pos + self.action_map[choice]
+        next_pos = self.agent_pos + self.action_map[int(choice)]
         if not self.is_inbounds(next_pos): return self.board
         next = deepcopy(self.board)
         next[self.agent_pos[0]][self.agent_pos[1]] = "000000ff"
@@ -145,7 +150,7 @@ class DLGrid():
         return next
 
     def board_to_tensor(self, board):
-        tensor_board = torch.zeros((self.board.shape))
+        tensor_board = torch.zeros((self.board.shape)).to(self.device)
         for y, row in enumerate(self.board):
             for x, cell in enumerate(row):
                 tensor_board[y][x] = self.board_val_dict[cell.lower()]
@@ -163,10 +168,11 @@ class DLGrid():
         self.steps_done += 1
         if sample > eps_threshold:
             # Take deliberate action
-            return rn.randint(0, 3)
+            with torch.no_grad():
+                return torch.argmax(self.policy_net(self.state))
         else:
             # Take random action
-            return rn.randint(0, 3)
+            return torch.tensor(rn.randint(0, 3), device=self.device)
 
     def replay(self):
        self.memory.sample(self.BATCH_SIZE)
@@ -180,6 +186,7 @@ class DLGrid():
         next_state = self.next_state(action)
         self.memory.push(self.board_to_tensor(self.board), action, self.board_to_tensor(next_state), reward)
         self.board = next_state
+        self.state = self.board_to_tensor(self.board).flatten()
         self.finished = self.is_done()
 
         return next_state

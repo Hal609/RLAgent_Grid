@@ -14,8 +14,6 @@ class VoxelGrid(ShowBase):
 
         self.done = False
         self.tick_rate = tick_rate
-        # self.tick = self.tick_rate
-        # self.ticked = False
         self.grid2d = numpy_grid
 
         self.cam_pos = Point3(0, 0, 0)
@@ -32,10 +30,8 @@ class VoxelGrid(ShowBase):
         self.create_voxel_grid(self.grid2d)
         self.create_floor()
 
-        # Update the scene at a consistent frame rate
         self.taskMgr.add(self.spin_camera, "spin_camera_task")
         self.taskMgr.doMethodLater(self.tick_rate, self.update_grid_task, "update_grid_task")
-        # self.taskMgr.doMethodLater(self.tick_rate, self.tick_frame, "tick_frame_task")
 
         self.render.setDepthTest(True)
         self.render.setDepthWrite(True)
@@ -49,7 +45,7 @@ class VoxelGrid(ShowBase):
         return Task.again
     
     def update_grid(self, new_grid):
-        # if (new_grid == self.grid2d).all(): return
+        if (new_grid == self.grid2d).all(): return
         for node in self.render.findAllMatches("=type=GridCube"):
             node.removeNode()
         self.grid2d = new_grid
