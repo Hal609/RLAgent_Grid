@@ -9,9 +9,9 @@ import torch.nn as nn
 import torch.optim as optim
 
 from grid_vis_new import run_grid
-    
+
 class Grid():
-    def __init__(self, size, treat_ratio = 0.7, trap_ratio = 0.3):
+    def __init__(self, size, treat_ratio = 0.7, trap_ratio = 0.2):
         self.size = size
         self.height = size[0]
         self.width = size[1]
@@ -20,6 +20,7 @@ class Grid():
         self.treat_ratio = treat_ratio
         self.trap_ratio = trap_ratio
         self.num_traps = 0
+        self.action_map = {0: torch.tensor((0, 1)), 1: torch.tensor((0, -1)), 2: torch.tensor((1, 0)), 3: torch.tensor((-1, 0))}
 
         self.colour_dict = {"treat": "ba0d8e66", "trap": "110c0baa", "agent": "db2046"}
 
@@ -27,41 +28,42 @@ class Grid():
 
         self.init_board()
         self.initial_setup = deepcopy(self.board)
-        
 
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append([state, action, reward, next_state, done])
 
     def init_board(self):
         self.board = np.zeros(self.size, dtype='U8')
         for y, row in enumerate(self.board):
             for x in range(len(row)):
-                self.board[y][x] = "000000FF"
+                if y == 0 or y == len(self.board) - 1 or x == 0 or x == len(row) - 1:
+                     self.board[y][x] = "FFFFFFFF"
+                else:
+                    self.board[y][x] = "000000FF"
         treats = 0
         num_treats = self.height * self.width * self.treat_ratio
         while treats < num_treats:
-            x = rn.randint(0, self.width - 1)
-            y = rn.randint(0, self.height - 1)
+            x = rn.randint(1, self.width - 2)
+            y = rn.randint(1, self.height - 2)
             if self.board[y][x] != 1:
                 self.board[y][x] = self.colour_dict["treat"]
                 treats += 1
         traps = 0
         self.num_traps = (self.height * self.width - num_treats) * self.trap_ratio
         while traps < self.num_traps:
-            x = rn.randint(0, self.width - 1)
-            y = rn.randint(0, self.height - 1)
+            x = rn.randint(1, self.width - 2)
+            y = rn.randint(1, self.height - 2)
             if self.board[y][x] != 1:
                 self.board[y][x] = self.colour_dict["trap"]
                 traps += 1
+
 
         self.agent_pos = torch.tensor((self.height//2, self.width//2))
         self.board[self.agent_pos[0]][self.agent_pos[1]] = self.colour_dict["agent"]
 
     def is_inbounds(self, pos):
-        if -1 in pos or self.width <= pos[0] or self.height <= pos[1]:
+        if 0 in pos or self.width-1 <= pos[1] or self.height-1 <= pos[0]:
             return False
         return True
-    
+
     def get_next(self):
         directions = torch.tensor(((0, 1), (0, -1), (1, 0), (-1, 0)))
         nexts = []
@@ -69,9 +71,10 @@ class Grid():
             if self.is_inbounds(entry):
                 nexts.append(entry)
         return torch.stack(nexts)
-    
-    def calc_reward(self, action):
-        next_val = self.board[action[0]][action[1]]
+
+    def calc_reward(self, choice):
+        new_pos = self.agent_pos + self.action_map[choice]
+        next_val = self.board[new_pos[0]][new_pos[1]]
         if next_val == self.colour_dict["treat"]:
             return 1
         elif next_val == self.colour_dict["trap"]:
@@ -82,8 +85,10 @@ class Grid():
         # if int(torch.count_nonzero(self.board)) == self.num_traps + 1: return True
         if self.initial_setup[self.agent_pos[0]][self.agent_pos[1]] == self.colour_dict["trap"]: return True
         return False
-    
-    def next_state(self, next_pos):
+
+    def next_state(self, choice):
+        next_pos = self.agent_pos + self.action_map[choice]
+        if not self.is_inbounds(next_pos): return self.board
         next = deepcopy(self.board)
         next[self.agent_pos[0]][self.agent_pos[1]] = "000000"
         self.agent_pos = next_pos
@@ -93,13 +98,13 @@ class Grid():
 
     def pick_action(self):
         return rn.choice(self.get_next())
-    
+
     def step(self):
         action = self.pick_action()
         reward = self.calc_reward(action)
         self.score += reward
         next_state = self.next_state(action)
-        self.remember(self.board, action, reward, next_state, self.finished)
+        self.memory.push(self.board, action, reward, next_state, self.finished)
         self.board = next_state
         self.finished = self.is_done()
 
@@ -107,7 +112,7 @@ class Grid():
 class DQN(nn.Module):
     def __init__(self, n_observations, n_actions):
         super(DQN, self).__init__()
-        self.fc1 = nn.Linear(n_observations, 128) 
+        self.fc1 = nn.Linear(n_observations, 128)
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, n_actions)  # Output is the Q-value for each action (up, down, left, right)
 
@@ -135,6 +140,9 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
     
+    def __str__(self):
+        return str(self.memory)
+
 
 class DLGrid(Grid):
     def __init__(self, size, treat_ratio=0.7, trap_ratio=0.3):
@@ -152,7 +160,7 @@ class DLGrid(Grid):
                     "cuda" if torch.cuda.is_available() else
                     "mps" if torch.backends.mps.is_available() else
                     "cpu")
-        
+
         n_actions = 4
         n_observations = self.height * self.width
 
@@ -161,9 +169,10 @@ class DLGrid(Grid):
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
         self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.LR, amsgrad=True)
+        self.memory = ReplayMemory(10000)
 
         self.steps_done = 0
-    
+
     def pick_action(self):
         sample = rn.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * \
@@ -171,41 +180,39 @@ class DLGrid(Grid):
         self.steps_done += 1
         if sample > eps_threshold:
             # Take deliberate action
+            return rn.randint(0, 3)
             return rn.choice(self.get_next())
         else:
             # Take random action
+            return rn.randint(0, 3)
             return rn.choice(self.get_next())
 
     def replay(self):
-        rn.sample(self.memory, self.BATCH_SIZE)
+       self.memory.sample(self.BATCH_SIZE)
 
     def step(self, current_grid):
-        if self.finished: return None
+        if self.finished: sleep(0.5); self.reset()
+
         action = self.pick_action()
         reward = self.calc_reward(action)
         self.score += reward
         next_state = self.next_state(action)
         # state, action, reward, next state, is terminal?
-        self.remember(self.board, action, reward, next_state, self.finished)
+        print("board", action, reward, "next_state")
+        self.memory.push(self.board, action, reward, next_state)
         self.board = next_state
         self.finished = self.is_done()
 
         return next_state
 
-    def run_episode(self):
-        while not self.finished:
-            print(self.board)
-            sleep(1)
-            self.step()
-        
-        print(self.score)
-
     def run_n_episodes(self, n):
         for i in range(n):
-            self.run_episode()
+            run_grid(self.board, update_func=grid.step, tick_rate=0.1)
             self.reset()
 
     def reset(self):
+        print(self.score)
+        # print(self.memory)
         self.score = 0
         self.board = self.initial_setup
         self.finished = False
@@ -214,5 +221,6 @@ class DLGrid(Grid):
 
 
 if __name__ == "__main__":
-    grid =  DLGrid((4, 6))
-    run_grid(grid.board, update_func=grid.step, tick_rate=1)
+    grid =  DLGrid((20, 20))
+    grid.run_n_episodes(n=10)
+    # run_grid(grid.board, update_func=grid.step, tick_rate=0.1)

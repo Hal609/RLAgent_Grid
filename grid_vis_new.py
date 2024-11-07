@@ -6,6 +6,7 @@ from panda3d.core import DirectionalLight
 from panda3d.core import CullFaceAttrib, AntialiasAttrib
 import numpy as np
 import random
+from time import sleep
 import math
 
 class VoxelGrid(ShowBase):
@@ -72,7 +73,7 @@ class VoxelGrid(ShowBase):
             self.ticked = True
         else:
             self.ticked = False
-            self.tick == round(task.time + 0.1, 1)
+            self.tick = round(task.time + 0.1, 1)
         return Task.cont
 
     def setup_lighting(self):
