@@ -23,6 +23,7 @@ class Grid():
         self.action_map = {0: torch.tensor((0, 1)), 1: torch.tensor((0, -1)), 2: torch.tensor((1, 0)), 3: torch.tensor((-1, 0))}
 
         self.colour_dict = {"treat": "ba0d8e66", "trap": "110c0baa", "agent": "db2046"}
+        self.board_val_dict = {"000000ff": 0, "ffffffff": 1, "ba0d8e66": 2, "110c0baa": 3, "db2046": 4}
 
         self.memory = deque(maxlen=10000)
 
@@ -35,9 +36,9 @@ class Grid():
         for y, row in enumerate(self.board):
             for x in range(len(row)):
                 if y == 0 or y == len(self.board) - 1 or x == 0 or x == len(row) - 1:
-                     self.board[y][x] = "FFFFFFFF"
+                     self.board[y][x] = "ffffffff"
                 else:
-                    self.board[y][x] = "000000FF"
+                    self.board[y][x] = "000000ff"
         treats = 0
         num_treats = self.height * self.width * self.treat_ratio
         while treats < num_treats:
@@ -81,8 +82,15 @@ class Grid():
             return -3
         return 0
 
+    def board_to_tensor(self, board):
+        tensor_board = torch.zeros((self.board.shape))
+        for y, row in enumerate(self.board):
+            for x, cell in enumerate(row):
+                tensor_board[y][x] = self.board_val_dict[cell.lower()]
+        return tensor_board
+        
     def is_done(self):
-        # if int(torch.count_nonzero(self.board)) == self.num_traps + 1: return True
+        if int(torch.count_nonzero(self.board_to_tensor(self.board))) == self.num_traps + 1: return True
         if self.initial_setup[self.agent_pos[0]][self.agent_pos[1]] == self.colour_dict["trap"]: return True
         return False
 
@@ -90,7 +98,7 @@ class Grid():
         next_pos = self.agent_pos + self.action_map[choice]
         if not self.is_inbounds(next_pos): return self.board
         next = deepcopy(self.board)
-        next[self.agent_pos[0]][self.agent_pos[1]] = "000000"
+        next[self.agent_pos[0]][self.agent_pos[1]] = "000000ff"
         self.agent_pos = next_pos
         next[next_pos[0]][next_pos[1]] = self.colour_dict["agent"]
 
@@ -197,6 +205,7 @@ class DLGrid(Grid):
         reward = self.calc_reward(action)
         self.score += reward
         next_state = self.next_state(action)
+        self.board_to_tensor(next_state)
         # state, action, reward, next state, is terminal?
         print("board", action, reward, "next_state")
         self.memory.push(self.board, action, reward, next_state)
@@ -221,6 +230,6 @@ class DLGrid(Grid):
 
 
 if __name__ == "__main__":
-    grid =  DLGrid((20, 20))
+    grid =  DLGrid((18, 18))
     grid.run_n_episodes(n=10)
     # run_grid(grid.board, update_func=grid.step, tick_rate=0.1)
