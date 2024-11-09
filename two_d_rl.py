@@ -14,9 +14,9 @@ from grid_vis_new import run_grid
 
 # Define the DQN network with increased capacity and proper initialization
 class DQN(nn.Module):
-    def __init__(self):
+    def __init__(self, n_inputs):
         super(DQN, self).__init__()
-        self.fc1 = nn.Linear(2, 64)  # Now input size is 2 (x and y coordinates)
+        self.fc1 = nn.Linear(n_inputs, 64)  # Now input size is 2 (x and y coordinates)
         self.fc2 = nn.Linear(64, 64)
         self.fc3 = nn.Linear(64, 4)  # Output size is 4 (up, down, left, right)
         self.apply(self.init_weights)
@@ -57,12 +57,14 @@ class DLGrid():
     def __init__(self, size=11):
         self.device = torch.device(
                     "cuda" if torch.cuda.is_available() else
-                    "mps" if torch.backends.mps.is_available() else
+                    # "mps" if torch.backends.mps.is_available() else
                     "cpu")
         
+        num_inputs = size ** 2
+        
         # Initialize the policy and target networks
-        self.policy_net = DQN()
-        self.target_net = DQN()
+        self.policy_net = DQN(num_inputs).to(self.device)
+        self.target_net = DQN(num_inputs).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()  # Set target network to evaluation mode
 
@@ -74,11 +76,11 @@ class DLGrid():
         # Epsilon parameters for decay
         self.epsilon_start = 1.0
         self.epsilon_end = 0.01
-        self.epsilon_decay = 0.99
+        self.epsilon_decay = 0.999
         self.epsilon = self.epsilon_start
 
         self.target_update = 10  # How often to update the target network
-        self.max_steps_per_episode = 100
+        self.max_steps_per_episode = 300
         self.episode_steps = 0
         self.visualise_every_n = 100
         self.grid_size = size # Grid size, defaults to (11x11)
@@ -97,22 +99,31 @@ class DLGrid():
         self.state = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
 
         # Grid
+        self.colour_map = {"empty": "000000ff", "wall": "ffffffff", "goal": "aa00ff44", "agent": "ff3300ff"}
+        self.colour_to_float = {"000000ff": 0.0, "ffffffff": 0.0, "aa00ff44": 0.5, "ff3300ff": 1.0}
         self.grid = self.init_grid()
 
     def init_grid(self):
         grid = np.zeros((self.grid_size, self.grid_size), dtype='U8')
         for y, row in enumerate(grid):
             for x, cell in enumerate(row):
-                grid[y][x] = "000000ff"
+                grid[y][x] = self.colour_map["empty"]
                 if y == 0 or y == self.grid_size - 1 or x == 0 or x == self.grid_size - 1:
-                    grid[y][x] = "ffffffff"
+                    grid[y][x] = self.colour_map["wall"]
                 else:
-                    grid[y][x] == "000000ff"
+                    grid[y][x] == self.colour_map["empty"]
         for goal in self.goal_states:
-            grid[goal[0]][goal[1]] = "aa00ff44"
+            grid[goal[0]][goal[1]] = self.colour_map["goal"]
 
         return grid
     
+    def grid_to_state(self, grid):
+        grid = list(grid.flatten())
+        for i in range(len(grid)):
+            grid[i] = self.colour_to_float[grid[i]]
+
+        return tuple(grid)
+
     def calc_reward(self, state):
         reward = 0
         x, y = state
@@ -151,7 +162,7 @@ class DLGrid():
             return rn.randint(0, 3)  # Random action (exploration)
         else:
             with torch.no_grad():
-                state_tensor = torch.tensor([normalised_state], dtype=torch.float32)
+                state_tensor = torch.tensor([normalised_state], dtype=torch.float32, device=self.device)
                 q_values = self.policy_net(state_tensor)
                 return q_values.argmax().item()  # Best action (exploitation)
 
@@ -160,11 +171,11 @@ class DLGrid():
         batch = self.replay_buffer.sample(self.batch_size)
         states, actions_batch, rewards, next_states, dones = zip(*batch)
         
-        states = torch.tensor(states, dtype=torch.float32)
-        actions_batch = torch.tensor(actions_batch, dtype=torch.int64).unsqueeze(1)
-        rewards = torch.tensor(rewards, dtype=torch.float32)
-        next_states = torch.tensor(next_states, dtype=torch.float32)
-        dones = torch.tensor(dones, dtype=torch.float32)
+        states = torch.tensor(states, dtype=torch.float32, device=self.device)
+        actions_batch = torch.tensor(actions_batch, dtype=torch.int64, device=self.device).unsqueeze(1)
+        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+        next_states = torch.tensor(next_states, dtype=torch.float32, device=self.device)
+        dones = torch.tensor(dones, dtype=torch.float32, device=self.device)
 
         # Compute Q(s,a)
         q_values = self.policy_net(states).gather(1, actions_batch).squeeze()
@@ -187,6 +198,7 @@ class DLGrid():
 
         # Normalize state for input to network
         normalized_state = (self.state[0] / (self.grid_size - 1), self.state[1] / (self.grid_size - 1))
+        normalized_state = self.grid_to_state(self.grid)
         action = self.pick_action(normalized_state)
 
         next_state = self.next_state(action)
@@ -195,12 +207,13 @@ class DLGrid():
 
         self.total_reward += reward
 
+        self.grid[self.state] = self.colour_map["empty"]
+        self.grid[next_state] = self.colour_map["agent"]
+
         # Store experience in replay buffer
         normalized_next_state = (next_state[0] / (self.grid_size - 1), next_state[1] / (self.grid_size - 1))
+        normalized_next_state = self.grid_to_state(self.grid)
         self.replay_buffer.push(normalized_state, action, reward, normalized_next_state, float(self.done))
-
-        self.grid[self.state] = "000000"
-        self.grid[next_state] = "FF3300"
 
         self.state = next_state
 
@@ -271,7 +284,7 @@ class DLGrid():
         for y in range(self.grid_size):
             state = (5, y)
             normalized_state = (state[0] / (self.grid_size - 1), state[1] / (self.grid_size - 1))
-            state_tensor = torch.tensor([normalized_state], dtype=torch.float32)
+            state_tensor = torch.tensor([normalized_state], dtype=torch.float32, device=self.device)
             with torch.no_grad():
                 q_values = self.policy_net(state_tensor)
                 best_action = q_values.argmax().item()
@@ -281,7 +294,7 @@ class DLGrid():
         for x in range(self.grid_size):
             state = (x, 5)
             normalized_state = (state[0] / (self.grid_size - 1), state[1] / (self.grid_size - 1))
-            state_tensor = torch.tensor([normalized_state], dtype=torch.float32)
+            state_tensor = torch.tensor([normalized_state], dtype=torch.float32, device=self.device)
             with torch.no_grad():
                 q_values = self.policy_net(state_tensor)
                 best_action = q_values.argmax().item()
