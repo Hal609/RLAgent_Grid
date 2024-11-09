@@ -1,6 +1,7 @@
 import numpy as np
 import random as rn
 import pandas as pd
+from time import sleep
 from copy import deepcopy
 from collections import deque, namedtuple
 import math
@@ -15,9 +16,9 @@ from grid_vis_new import run_grid
 class DQN(nn.Module):
     def __init__(self):
         super(DQN, self).__init__()
-        self.fc1 = nn.Linear(2, 32)  # Now input size is 2 (x and y coordinates)
-        self.fc2 = nn.Linear(32, 32)
-        self.fc3 = nn.Linear(32, 4)  # Output size is 4 (up, down, left, right)
+        self.fc1 = nn.Linear(2, 64)  # Now input size is 2 (x and y coordinates)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 4)  # Output size is 4 (up, down, left, right)
         self.apply(self.init_weights)
     
     def init_weights(self, m):
@@ -73,12 +74,13 @@ class DLGrid():
         # Epsilon parameters for decay
         self.epsilon_start = 1.0
         self.epsilon_end = 0.01
-        self.epsilon_decay = 0.999
+        self.epsilon_decay = 0.99
         self.epsilon = self.epsilon_start
 
         self.target_update = 10  # How often to update the target network
-        self.max_steps_per_episode = 50
+        self.max_steps_per_episode = 100
         self.episode_steps = 0
+        self.visualise_every_n = 100
         self.grid_size = size # Grid size, defaults to (11x11)
         self.goal_states = [(size//2, size//2)]  # Target position the agent should reach
         self.remaining_goals = deepcopy(self.goal_states)
@@ -107,7 +109,7 @@ class DLGrid():
                 else:
                     grid[y][x] == "000000ff"
         for goal in self.goal_states:
-            grid[goal[0]][goal[1]] = "ff000044"
+            grid[goal[0]][goal[1]] = "aa00ff44"
 
         return grid
     
@@ -198,7 +200,7 @@ class DLGrid():
         self.replay_buffer.push(normalized_state, action, reward, normalized_next_state, float(self.done))
 
         self.grid[self.state] = "000000"
-        self.grid[next_state] = "FFFFFF"
+        self.grid[next_state] = "FF3300"
 
         self.state = next_state
 
@@ -211,17 +213,18 @@ class DLGrid():
 
 
     def visualise_step(self, current_grid):
-        if self.episode % 100 == 0: return self.step(None)
-
-        while self.episode % 100 != 0:
-            self.step(None)
-
         if self.episode >= self.total_episodes:
             return None
+
+        while self.episode % self.visualise_every_n != 0 or self.episode == 0:
+            self.step(None)
+
+        if self.episode % self.visualise_every_n == 0: return self.step(None)
         
         return self.grid
         
     def reset(self):
+        if self.episode % self.visualise_every_n == 0: sleep(0.2)
         self.update_values()
         self.state = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
         self.grid = self.init_grid()
@@ -250,7 +253,7 @@ class DLGrid():
         for episode in range(num_episodes):
             self.total_reward = 0
             if vis:
-                run_grid(self.grid, update_func=self.visualise_step)
+                run_grid(self.grid, update_func=self.visualise_step, tick_rate=0.2)
             else:
                 for t in range(self.max_steps_per_episode):
                     self.step(None)
