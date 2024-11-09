@@ -78,6 +78,7 @@ class DLGrid():
 
         self.target_update = 10  # How often to update the target network
         self.max_steps_per_episode = 50
+        self.episode_steps = 0
         self.grid_size = size # Grid size, defaults to (11x11)
         self.goal_states = [(size//2, size//2)]  # Target position the agent should reach
         self.remaining_goals = deepcopy(self.goal_states)
@@ -137,6 +138,7 @@ class DLGrid():
         return (x, y)
 
     def is_done(self, next_state):
+        if self.episode_steps >= self.max_steps_per_episode: return True
         if len(self.remaining_goals) == 0:
             return True
         else:
@@ -179,13 +181,15 @@ class DLGrid():
         self.optimizer.step()
 
     def step(self, current_grid):
+        self.episode_steps += 1
+
         # Normalize state for input to network
         normalized_state = (self.state[0] / (self.grid_size - 1), self.state[1] / (self.grid_size - 1))
         action = self.pick_action(normalized_state)
 
         next_state = self.next_state(action)
-        reward = self.calc_reward(next_state)
-        self.done = self.is_done(next_state)
+        reward = self.calc_reward(self.state)
+        self.done = self.is_done(self.state)
 
         self.total_reward += reward
 
@@ -206,11 +210,24 @@ class DLGrid():
         return self.grid
 
 
+    def visualise_step(self, current_grid):
+        if self.episode % 100 == 0: return self.step(None)
+
+        while self.episode % 100 != 0:
+            self.step(None)
+
+        if self.episode >= self.total_episodes:
+            return None
+        
+        return self.grid
+        
     def reset(self):
         self.update_values()
         self.state = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
         self.grid = self.init_grid()
         self.total_reward = 0
+        self.episode_steps = 0
+        self.done = False
         self.remaining_goals = deepcopy(self.goal_states)
         self.episode += 1
 
@@ -229,10 +246,11 @@ class DLGrid():
     def run_n_episodes(self, num_episodes = 1000, vis=False):
         # Training loop
         self.episode = 0
+        self.total_episodes = num_episodes
         for episode in range(num_episodes):
             self.total_reward = 0
             if vis:
-                run_grid(self.grid, update_func=self.step)
+                run_grid(self.grid, update_func=self.visualise_step)
             else:
                 for t in range(self.max_steps_per_episode):
                     self.step(None)
@@ -269,4 +287,4 @@ class DLGrid():
 
 if __name__ == "__main__":
     env = DLGrid(size=11)
-    env.run_n_episodes(2000, vis=False)
+    env.run_n_episodes(2000, vis=True)
