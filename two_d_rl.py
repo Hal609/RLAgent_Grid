@@ -16,9 +16,10 @@ from grid_vis_new import run_grid
 class DQN(nn.Module):
     def __init__(self, n_inputs):
         super(DQN, self).__init__()
-        self.fc1 = nn.Linear(n_inputs, 64)  # Now input size is 2 (x and y coordinates)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 4)  # Output size is 4 (up, down, left, right)
+        self.fc1 = nn.Linear(n_inputs, 256)  # Now input size is 2 (x and y coordinates)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 256)
+        self.fc4 = nn.Linear(256, 4)  # Output size is 4 (up, down, left, right)
         self.apply(self.init_weights)
     
     def init_weights(self, m):
@@ -29,7 +30,8 @@ class DQN(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        x = F.relu(self.fc3(x))
+        return self.fc4(x)
 
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward', 'done'))
@@ -68,23 +70,24 @@ class DLGrid():
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()  # Set target network to evaluation mode
 
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-4)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-5)
 
         # Parameters
-        self.gamma = 0.9  # Discount factor
+        self.gamma = 0.95  # Discount factor
 
         # Epsilon parameters for decay
         self.epsilon_start = 1.0
         self.epsilon_end = 0.01
-        self.epsilon_decay = 0.999
+        self.epsilon_decay = 0.9991
         self.epsilon = self.epsilon_start
 
         self.target_update = 10  # How often to update the target network
-        self.max_steps_per_episode = 300
+        self.max_steps_per_episode = 250
         self.episode_steps = 0
         self.visualise_every_n = 100
         self.grid_size = size # Grid size, defaults to (11x11)
-        self.goal_states = [(size//2, size//2)]  # Target position the agent should reach
+        self.hazards = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.08]
+        self.goal_states = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.08]  # Target position the agent should reach
         self.remaining_goals = deepcopy(self.goal_states)
         self.done = False
 
@@ -96,11 +99,11 @@ class DLGrid():
         self.actions = ['up', 'down', 'left', 'right']
 
         # State
-        self.state = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
+        self.position = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
 
         # Grid
-        self.colour_map = {"empty": "000000ff", "wall": "ffffffff", "goal": "aa00ff44", "agent": "ff3300ff"}
-        self.colour_to_float = {"000000ff": 0.0, "ffffffff": 0.0, "aa00ff44": 0.5, "ff3300ff": 1.0}
+        self.colour_map = {"empty": "000000ff", "wall": "ffffffff", "goal": "aa00ff44", "agent": "ff3300ff", "hazard": "333333aa"}
+        self.colour_to_float = {"000000ff": 0.0, "ffffffff": 0.0, "aa00ff44": 0.5, "ff3300ff": 1.0, "333333aa": 0.2}
         self.grid = self.init_grid()
 
     def init_grid(self):
@@ -114,6 +117,8 @@ class DLGrid():
                     grid[y][x] == self.colour_map["empty"]
         for goal in self.goal_states:
             grid[goal[0]][goal[1]] = self.colour_map["goal"]
+        for hazard in self.hazards:
+            grid[hazard[0]][hazard[1]] = self.colour_map["hazard"]
 
         return grid
     
@@ -131,11 +136,13 @@ class DLGrid():
         if state in self.remaining_goals:
             self.remaining_goals.remove(state)
             reward += 1.0  # Positive reward for reaching the goal
+        if state in self.hazards:
+            reward -= 1.0
         reward +=  -0.1
         return reward / (2 * (self.grid_size - 1))  # Normalize reward between -1 and 0
     
     def next_state(self, action):
-        x, y = self.state
+        x, y = self.position
         if action == 0:  # Up
             y = y - 1
         elif action == 1:  # Down
@@ -150,8 +157,9 @@ class DLGrid():
 
         return (x, y)
 
-    def is_done(self, next_state):
+    def is_done(self, state):
         if self.episode_steps >= self.max_steps_per_episode: return True
+        if state in self.hazards: return True
         if len(self.remaining_goals) == 0:
             return True
         else:
@@ -197,25 +205,23 @@ class DLGrid():
         self.episode_steps += 1
 
         # Normalize state for input to network
-        normalized_state = (self.state[0] / (self.grid_size - 1), self.state[1] / (self.grid_size - 1))
         normalized_state = self.grid_to_state(self.grid)
         action = self.pick_action(normalized_state)
 
         next_state = self.next_state(action)
-        reward = self.calc_reward(self.state)
-        self.done = self.is_done(self.state)
+        reward = self.calc_reward(self.position)
+        self.done = self.is_done(self.position)
 
         self.total_reward += reward
 
-        self.grid[self.state] = self.colour_map["empty"]
+        self.grid[self.position] = self.colour_map["empty"]
         self.grid[next_state] = self.colour_map["agent"]
 
         # Store experience in replay buffer
-        normalized_next_state = (next_state[0] / (self.grid_size - 1), next_state[1] / (self.grid_size - 1))
         normalized_next_state = self.grid_to_state(self.grid)
         self.replay_buffer.push(normalized_state, action, reward, normalized_next_state, float(self.done))
 
-        self.state = next_state
+        self.position = next_state
 
         if len(self.replay_buffer) >= self.batch_size:
             self.optimize_model()
@@ -239,7 +245,7 @@ class DLGrid():
     def reset(self):
         if self.episode % self.visualise_every_n == 0: sleep(0.2)
         self.update_values()
-        self.state = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
+        self.position = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
         self.grid = self.init_grid()
         self.total_reward = 0
         self.episode_steps = 0
@@ -303,4 +309,4 @@ class DLGrid():
 
 if __name__ == "__main__":
     env = DLGrid(size=11)
-    env.run_n_episodes(2000, vis=True)
+    env.run_n_episodes(3000, vis=True)

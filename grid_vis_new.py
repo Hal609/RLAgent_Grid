@@ -120,11 +120,11 @@ class VoxelGrid(ShowBase):
 
     def spin_camera(self, task):
         """Rotate camera around the grid."""
-        angleDegrees = task.time * 0.3
+        angleDegrees = task.time * 0.2
         angleRadians = angleDegrees * (3.14159 / 180.0)
         centre = (self.grid2d.shape[0]/2, self.grid2d.shape[1]/2)
-        distance = 5 + 2 * max(self.grid2d.shape[0], self.grid2d.shape[1])
-        self.cam_pos = LVector3(centre[0] + math.sin(angleRadians)*distance, -centre[1] + math.cos(angleRadians)*distance, 25)
+        distance = 2 + 2 * max(self.grid2d.shape[0], self.grid2d.shape[1])
+        self.cam_pos = LVector3(centre[0] + math.sin(angleRadians)*distance, centre[1] + math.cos(angleRadians)*distance, 25)
 
         self.camera.setPos(self.cam_pos)
         self.camera.lookAt(*centre, 0)
