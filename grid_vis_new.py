@@ -33,8 +33,8 @@ class VoxelGrid(ShowBase):
         self.taskMgr.add(self.spin_camera, "spin_camera_task")
         self.taskMgr.doMethodLater(self.tick_rate, self.update_grid_task, "update_grid_task")
 
-        self.render.setDepthTest(True)
-        self.render.setDepthWrite(True)
+        # self.render.setDepthTest(True)
+        # self.render.setDepthWrite(True)
 
     def update_grid_task(self, task):
         new = self.update_func(self.grid2d)

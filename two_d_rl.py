@@ -70,7 +70,7 @@ class DLGrid():
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()  # Set target network to evaluation mode
 
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-5)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=1e-4)
 
         # Parameters
         self.gamma = 0.95  # Discount factor
@@ -82,12 +82,12 @@ class DLGrid():
         self.epsilon = self.epsilon_start
 
         self.target_update = 10  # How often to update the target network
-        self.max_steps_per_episode = 250
+        self.max_steps_per_episode = 50
         self.episode_steps = 0
         self.visualise_every_n = 100
         self.grid_size = size # Grid size, defaults to (11x11)
-        self.hazards = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.08]
-        self.goal_states = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.08]  # Target position the agent should reach
+        self.hazards = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.03]
+        self.goal_states = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.03]  # Target position the agent should reach
         self.remaining_goals = deepcopy(self.goal_states)
         self.done = False
 
@@ -99,7 +99,8 @@ class DLGrid():
         self.actions = ['up', 'down', 'left', 'right']
 
         # State
-        self.position = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
+        # self.position = (rn.randint(1, self.grid_size - 2), rn.randint(1, self.grid_size - 2))  # Random start position
+        self.position = (size//2, size//2)
 
         # Grid
         self.colour_map = {"empty": "000000ff", "wall": "ffffffff", "goal": "aa00ff44", "agent": "ff3300ff", "hazard": "333333aa"}
@@ -135,7 +136,10 @@ class DLGrid():
         # distance_to_goal = abs(x - self.goal_state[0]) + abs(y - self.goal_state[1])  # Manhattan distance
         if state in self.remaining_goals:
             self.remaining_goals.remove(state)
-            reward += 1.0  # Positive reward for reaching the goal
+            print("Goals", self.goal_states)
+            print("Remaining goals", self.remaining_goals)
+            print("position", state)
+            reward += 3.0  # Positive reward for reaching the goal
         if state in self.hazards:
             reward -= 1.0
         reward +=  -0.1
@@ -160,7 +164,7 @@ class DLGrid():
     def is_done(self, state):
         if self.episode_steps >= self.max_steps_per_episode: return True
         if state in self.hazards: return True
-        if len(self.remaining_goals) == 0:
+        if len(self.remaining_goals) <= 0:
             return True
         else:
             return False
