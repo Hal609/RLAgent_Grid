@@ -12,26 +12,36 @@ import torch.nn.functional as F
 
 from grid_vis_new import run_grid
 
-# Define the DQN network with increased capacity and proper initialization
+# Define the DQN network with convolutional layers and increased capacity
 class DQN(nn.Module):
-    def __init__(self, n_inputs):
+    def __init__(self, grid_size, n_actions=4):
+        self.grid_size = grid_size
+
         super(DQN, self).__init__()
-        self.fc1 = nn.Linear(n_inputs, 256)  # Now input size is 2 (x and y coordinates)
+        
+        # Convolutional layers
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1)  # Input channels = 1 for grayscale
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+
+        # Calculate the size of the flattened output after convolutions
+        conv_output_size = grid_size * grid_size * 64
+
+        # Fully connected layers
+        self.fc1 = nn.Linear(conv_output_size, 256)
         self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 256)
-        self.fc4 = nn.Linear(256, 4)  # Output size is 4 (up, down, left, right)
-        self.apply(self.init_weights)
-    
-    def init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            nn.init.xavier_uniform_(m.weight)
-            m.bias.data.fill_(0.01)
-    
+        self.fc3 = nn.Linear(256, n_actions)
+
     def forward(self, x):
+        x = x.view(-1, 1, self.grid_size, self.grid_size)  # Reshape input to (batch_size, channels, H, W)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+
+        x = x.view(x.size(0), -1)  # Flatten
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        return self.fc4(x)
+        return self.fc3(x)
 
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward', 'done'))
@@ -59,14 +69,15 @@ class DLGrid():
     def __init__(self, size=11):
         self.device = torch.device(
                     "cuda" if torch.cuda.is_available() else
-                    # "mps" if torch.backends.mps.is_available() else
+                    "mps" if torch.backends.mps.is_available() else
                     "cpu")
         
-        num_inputs = size ** 2
-        
-        # Initialize the policy and target networks
-        self.policy_net = DQN(num_inputs).to(self.device)
-        self.target_net = DQN(num_inputs).to(self.device)
+        self.grid_size = size  # Grid size
+        n_actions = 4  # Number of possible actions
+
+        # Initialize the policy and target networks with convolutional layers
+        self.policy_net = DQN(self.grid_size, n_actions).to(self.device)
+        self.target_net = DQN(self.grid_size, n_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()  # Set target network to evaluation mode
 
@@ -78,7 +89,7 @@ class DLGrid():
         # Epsilon parameters for decay
         self.epsilon_start = 1.0
         self.epsilon_end = 0.01
-        self.epsilon_decay = 0.9991
+        self.epsilon_decay = 0.999
         self.epsilon = self.epsilon_start
 
         self.target_update = 10  # How often to update the target network
@@ -86,8 +97,9 @@ class DLGrid():
         self.episode_steps = 0
         self.visualise_every_n = 100
         self.grid_size = size # Grid size, defaults to (11x11)
-        self.hazards = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.03]
-        self.goal_states = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.03]  # Target position the agent should reach
+        self.hazards = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.00]
+        # self.goal_states = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.01]  # Target position the agent should reach
+        self.goal_states = [(size//2, size//2)]
         self.remaining_goals = deepcopy(self.goal_states)
         self.done = False
 
@@ -124,11 +136,8 @@ class DLGrid():
         return grid
     
     def grid_to_state(self, grid):
-        grid = list(grid.flatten())
-        for i in range(len(grid)):
-            grid[i] = self.colour_to_float[grid[i]]
-
-        return tuple(grid)
+        state = np.array([[self.colour_to_float[cell] for cell in row] for row in grid], dtype=np.float32)
+        return torch.tensor(state, device=self.device).unsqueeze(0)  # Shape (1, H, W)
 
     def calc_reward(self, state):
         reward = 0
@@ -142,7 +151,7 @@ class DLGrid():
             reward += 3.0  # Positive reward for reaching the goal
         if state in self.hazards:
             reward -= 1.0
-        reward +=  -0.1
+        reward +=  -0.01
         return reward / (2 * (self.grid_size - 1))  # Normalize reward between -1 and 0
     
     def next_state(self, action):
@@ -174,8 +183,8 @@ class DLGrid():
             return rn.randint(0, 3)  # Random action (exploration)
         else:
             with torch.no_grad():
-                state_tensor = torch.tensor([normalised_state], dtype=torch.float32, device=self.device)
-                q_values = self.policy_net(state_tensor)
+                # state_tensor = torch.tensor([normalised_state], dtype=torch.float32, device=self.device)
+                q_values = self.policy_net(normalised_state)
                 return q_values.argmax().item()  # Best action (exploitation)
 
     def optimize_model(self):
@@ -183,10 +192,12 @@ class DLGrid():
         batch = self.replay_buffer.sample(self.batch_size)
         states, actions_batch, rewards, next_states, dones = zip(*batch)
         
-        states = torch.tensor(states, dtype=torch.float32, device=self.device)
+        # Stack the state tensors
+        states = torch.stack(states).to(self.device)
+        next_states = torch.stack(next_states).to(self.device)
+
         actions_batch = torch.tensor(actions_batch, dtype=torch.int64, device=self.device).unsqueeze(1)
         rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
-        next_states = torch.tensor(next_states, dtype=torch.float32, device=self.device)
         dones = torch.tensor(dones, dtype=torch.float32, device=self.device)
 
         # Compute Q(s,a)
@@ -313,4 +324,4 @@ class DLGrid():
 
 if __name__ == "__main__":
     env = DLGrid(size=11)
-    env.run_n_episodes(3000, vis=True)
+    env.run_n_episodes(4000, vis=True)
