@@ -22,10 +22,9 @@ class DQN(nn.Module):
         # Convolutional layers
         self.conv1 = nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1)  # Input channels = 1 for grayscale
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
 
         # Calculate the size of the flattened output after convolutions
-        conv_output_size = grid_size * grid_size * 64
+        conv_output_size = grid_size * grid_size * 32
 
         # Fully connected layers
         self.fc1 = nn.Linear(conv_output_size, 256)
@@ -36,7 +35,6 @@ class DQN(nn.Module):
         x = x.view(-1, 1, self.grid_size, self.grid_size)  # Reshape input to (batch_size, channels, H, W)
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
 
         x = x.view(x.size(0), -1)  # Flatten
         x = F.relu(self.fc1(x))
@@ -69,7 +67,7 @@ class DLGrid():
     def __init__(self, size=11):
         self.device = torch.device(
                     "cuda" if torch.cuda.is_available() else
-                    "mps" if torch.backends.mps.is_available() else
+                    # "mps" if torch.backends.mps.is_available() else
                     "cpu")
         
         self.grid_size = size  # Grid size
@@ -97,9 +95,9 @@ class DLGrid():
         self.episode_steps = 0
         self.visualise_every_n = 100
         self.grid_size = size # Grid size, defaults to (11x11)
-        self.hazards = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.00]
+        self.hazards = [(rn.randint(1, size-2), rn.randint(1, size - 2)) for i in range(2)]
         # self.goal_states = [(x, y) for x in range(1, size-1) for y in range(1, size-1) if rn.random() < 0.01]  # Target position the agent should reach
-        self.goal_states = [(size//2, size//2)]
+        self.goal_states = [(rn.randint(1, size-2), rn.randint(1, size - 2))]
         self.remaining_goals = deepcopy(self.goal_states)
         self.done = False
 
@@ -145,14 +143,14 @@ class DLGrid():
         # distance_to_goal = abs(x - self.goal_state[0]) + abs(y - self.goal_state[1])  # Manhattan distance
         if state in self.remaining_goals:
             self.remaining_goals.remove(state)
-            print("Goals", self.goal_states)
-            print("Remaining goals", self.remaining_goals)
-            print("position", state)
-            reward += 3.0  # Positive reward for reaching the goal
+            # print("Goals", self.goal_states)
+            # print("Remaining goals", self.remaining_goals)
+            # print("position", state)
+            reward += 0.3  # Positive reward for reaching the goal
         if state in self.hazards:
-            reward -= 1.0
-        reward +=  -0.01
-        return reward / (2 * (self.grid_size - 1))  # Normalize reward between -1 and 0
+            reward -= 0.1
+        reward +=  -0.001
+        return reward
     
     def next_state(self, action):
         x, y = self.position
